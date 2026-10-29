@@ -18,7 +18,7 @@ Open-source systems engineer from Jabalpur, India. I work on observability, data
   <img alt="Merged pull requests in other projects, by month" src="assets/upstream-light.svg" width="100%">
 </picture>
 
-Some favourites: [CPython #143426](https://github.com/python/cpython/pull/143426) · [OpenTelemetry C++ #3966](https://github.com/open-telemetry/opentelemetry-cpp/pull/3966) · [OpenTelemetry C++ #4186](https://github.com/open-telemetry/opentelemetry-cpp/pull/4186) · [Jaeger UI #3259](https://github.com/jaegertracing/jaeger-ui/pull/3259) · [conda/rattler #1968](https://github.com/conda/rattler/pull/1968)
+
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/stack-dark.svg">

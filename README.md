@@ -1,6 +1,6 @@
-## Hi, I'm Divyanshu
+<img alt="Divyanshu Choudhury, open-source systems engineer, under a night sky where each star is a merged PR" src="assets/header.svg" width="100%">
 
-Open-source systems engineer from Jabalpur, India. I work on observability, databases and build tooling.
+I work on observability, databases and build tooling.
 
 - **GSoC 2026 at INCF / EBRAINS.** Built Spack subset environments for the EBRAINS Software Distribution and got arbor, NEST and NEURON running on EESSI ([merge request](https://gitlab.ebrains.eu/ri/tech-hub/platform/esd/ebrains-spack-builds/-/merge_requests/802)).
 - **Recently built** [Taintward](https://github.com/DCchoudhury15/Taintward), which finds emails, SSNs and API keys in an AI agent's tool and model calls and rewrites them before they leave, and [IsoWatch](https://github.com/DCchoudhury15/isowatch), which catches lost updates and write skew in live PostgreSQL traffic.

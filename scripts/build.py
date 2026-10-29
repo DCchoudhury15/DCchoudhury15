@@ -9,9 +9,10 @@ import datetime as dt
 import json
 import os
 import pathlib
+import random
 import urllib.parse
 import urllib.request
-from collections import defaultdict
+from collections import Counter, defaultdict
 from html import escape
 
 USER = "DCchoudhury15"
@@ -167,6 +168,56 @@ def upstream_card(prs, t):
     return svg(h, f"{len(prs)} merged pull requests in {repos} upstream repositories", "".join(body), t)
 
 
+def sky_card(prs):
+    """Night sky header. Each constellation is an upstream org and each of its stars is one merged PR."""
+    rnd = random.Random(15)  # fixed seed, so the sky only changes when the data does
+    h = 260
+    orgs = Counter(r.split("/")[0] for r, _ in prs)
+    out = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{h}" viewBox="0 0 {W} {h}" role="img" '
+        f'aria-label="Divyanshu Choudhury, open-source systems engineer. {len(prs)} merged upstream PRs in {len(orgs)} orgs.">'
+        '<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#070b1a"/>'
+        '<stop offset=".7" stop-color="#151633"/><stop offset="1" stop-color="#3a2238"/></linearGradient>'
+        '<radialGradient id="band"><stop offset="0" stop-color="#c9d4ff" stop-opacity=".16"/>'
+        '<stop offset="1" stop-color="#c9d4ff" stop-opacity="0"/></radialGradient>'
+        f'<clipPath id="c"><rect width="{W}" height="{h}" rx="10"/></clipPath></defs><g clip-path="url(#c)">'
+        f'<rect width="{W}" height="{h}" fill="url(#sky)"/>'
+        '<ellipse cx="520" cy="110" rx="440" ry="55" transform="rotate(-14 520 110)" fill="url(#band)"/>'
+    ]
+    for _ in range(170):
+        x, y, r = rnd.uniform(0, W), rnd.uniform(0, h - 30), rnd.choice((.4, .5, .6, .7, .9, 1.2))
+        out.append(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{r}" fill="#fff" opacity="{rnd.uniform(.25, .9):.2f}"/>')
+
+    boxes = [(350, 26, 170, 70), (570, 20, 150, 80), (740, 66, 70, 90), (380, 132, 140, 50), (580, 140, 120, 48)]
+    for (org, n), (bx, by, bw, bh) in zip(orgs.most_common(len(boxes)), boxes):
+        pts = sorted((rnd.uniform(bx, bx + bw), rnd.uniform(by, by + bh)) for _ in range(n))
+        out.append(f'<polyline points="{" ".join(f"{x:.0f},{y:.0f}" for x, y in pts)}" fill="none" '
+                   'stroke="#9fb0d8" stroke-opacity=".4" stroke-width=".8"/>')
+        out += [f'<circle cx="{x:.0f}" cy="{y:.0f}" r="4.5" fill="#ffd9a0" opacity=".18"/>'
+                f'<circle cx="{x:.0f}" cy="{y:.0f}" r="1.8" fill="#fff4e0"/>' for x, y in pts]
+        out.append(f'<text x="{bx}" y="{by + bh + 16}" font-family="{MONO}" font-size="10" letter-spacing="1" '
+                   f'fill="#8f9cc0">{escape(org.upper())} · {n}</text>')
+
+    for name, x, y in (("Taintward", 150, 72), ("IsoWatch", 250, 118)):
+        out.append(f'<circle cx="{x}" cy="{y}" r="11" fill="#ffe7c2" opacity=".14"/>'
+                   f'<path d="M{x} {y - 8}L{x + 1.8} {y - 1.8}L{x + 8} {y}L{x + 1.8} {y + 1.8}L{x} {y + 8}'
+                   f'L{x - 1.8} {y + 1.8}L{x - 8} {y}L{x - 1.8} {y - 1.8}Z" fill="#ffe7c2"/>'
+                   f'<text x="{x + 13}" y="{y + 4}" font-family="{SANS}" font-size="12" fill="#e9d9bf">{name}</text>')
+
+    ridge = " ".join(f"{x},{rnd.uniform(222, 248):.0f}" for x in range(0, W + 70, 70))
+    out += [
+        f'<path d="M0 {h}L{ridge}L{W} {h}Z" fill="#05070f"/>',
+        f'<text x="32" y="44" font-family="{MONO}" font-size="11" letter-spacing="1.5" fill="#f0a35e">'
+        f'{len(prs)} MERGED PRS · {len(orgs)} ORGS</text>',
+        f'<text x="32" y="184" font-family="{SANS}" font-size="30" font-weight="700" fill="#f5efe6">Divyanshu Choudhury</text>',
+        f'<text x="32" y="208" font-family="{SANS}" font-size="13.5" fill="#aab4cc">open-source systems engineer · Jabalpur, India</text>',
+        f'<text x="{W - 20}" y="{h - 12}" text-anchor="end" font-family="{MONO}" font-size="10" fill="#6f7aa0">'
+        'each star in a constellation is one merged PR</text>',
+        "</g></svg>\n",
+    ]
+    return "".join(out)
+
+
 def luminance(hex_color):
     rgb = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
     r, g, b = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
@@ -216,6 +267,7 @@ def main():
     icons = json.loads((ROOT / "scripts" / "icons.json").read_text())
     out = ROOT / "assets"
     out.mkdir(exist_ok=True)
+    (out / "header.svg").write_text(sky_card(prs))
     for theme, t in THEMES.items():
         (out / f"stats-{theme}.svg").write_text(stats_card(total, days, prs, t))
         (out / f"upstream-{theme}.svg").write_text(upstream_card(prs, t))

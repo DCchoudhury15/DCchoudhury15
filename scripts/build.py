@@ -9,6 +9,8 @@ import datetime as dt
 import json
 import os
 import pathlib
+import re
+import shutil
 import urllib.parse
 import urllib.request
 from collections import defaultdict
@@ -121,66 +123,108 @@ def cover(prs, total, days):
     )
 
 
-def svg(h, label, body, t, scope=""):
+def svg(h, label, body, t, scope="", frame=True):
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{h}" viewBox="0 0 {W} {h}" '
         f'role="img" aria-label="{escape(label)}">'
         f'<style>{scope}text{{font-family:{SANS};fill:{t["fg"]}}}{scope}.m{{font-family:{MONO}}}{scope}.mu{{fill:{t["muted"]}}}</style>'
-        f'<rect x=".5" y=".5" width="{W - 1}" height="{h - 1}" rx="10" fill="none" stroke="{t["line"]}"/>'
-        f"{body}</svg>\n"
+        + (f'<rect x=".5" y=".5" width="{W - 1}" height="{h - 1}" rx="10" fill="none" stroke="{t["line"]}"/>' if frame else "")
+        + f"{body}</svg>\n"
     )
 
 
-def upstream_card(prs, t, links=False, scope=""):
-    """Merged PRs by month, one lane per org. With links, every dot opens its PR (for the Pages copy)."""
+X0, X1 = 240, 776
+
+
+def timeline(prs):
+    """Lanes (one per org, busiest first), month starts and an x position function."""
     lanes = defaultdict(list)
     for pr in prs:
         lanes[pr[0].split("/")[0]].append(pr)
     order = sorted(lanes, key=lambda o: (-len(lanes[o]), lanes[o][0][1]))
+    next_month = lambda d: dt.date(d.year + d.month // 12, d.month % 12 + 1, 1)
+    start, end = dt.date(prs[0][1].year, prs[0][1].month, 1), next_month(dt.date.today())
+    months = [start]
+    while next_month(months[-1]) < end:
+        months.append(next_month(months[-1]))
+    pos = lambda d: X0 + (X1 - X0) * (d - start).days / (end - start).days
+    return lanes, order, months, pos
 
-    first = prs[0][1]
-    start = dt.date(first.year, first.month, 1)
-    today = dt.date.today()
-    end = dt.date(today.year + today.month // 12, today.month % 12 + 1, 1)
-    x0, x1 = 240, 776
-    pos = lambda d: x0 + (x1 - x0) * (d - start).days / (end - start).days
 
-    top, step = 92, 24
-    h = top + len(order) * step + 4
-    repos = len({p[0] for p in prs})
-    body = [
+def head(prs, order, months, pos, t, grid_to):
+    out = [
         '<text x="24" y="38" font-size="16" font-weight="600">Merged pull requests in other projects</text>',
         f'<text x="816" y="38" text-anchor="end" font-size="12" class="m mu">'
-        f"{len(prs)} PRs · {repos} repos · {len(order)} orgs</text>",
+        f"{len(prs)} PRs · {len({p[0] for p in prs})} repos · {len(order)} orgs</text>",
     ]
-    month = start
-    while month < end:
-        x = pos(month)
-        if month.month == 1 or month == start:
-            body.append(f'<text x="{x + 5:.1f}" y="60" font-size="11" font-weight="600" class="m mu">{month.year}</text>')
-        body.append(f'<line x1="{x:.1f}" y1="64" x2="{x:.1f}" y2="{h - 14}" stroke="{t["grid"]}"/>')
-        body.append(f'<text x="{x + 5:.1f}" y="76" font-size="11" class="m mu">{month:%b}</text>')
-        month = dt.date(month.year + month.month // 12, month.month % 12 + 1, 1)
+    for m in months:
+        x = pos(m)
+        if m.month == 1 or m == months[0]:
+            out.append(f'<text x="{x + 5:.1f}" y="60" font-size="11" font-weight="600" class="m mu">{m.year}</text>')
+        out.append(f'<line x1="{x:.1f}" y1="64" x2="{x:.1f}" y2="{grid_to}" stroke="{t["grid"]}"/>'
+                   f'<text x="{x + 5:.1f}" y="76" font-size="11" class="m mu">{m:%b}</text>')
+    return out
 
+
+def lane(org, prs, y, pos, t, links=False):
+    names = sorted({p[0] for p in prs})
+    label = escape(names[0]) if len(names) == 1 else f'{escape(org)}<tspan class="mu"> {len(names)} repos</tspan>'
+    out = [f'<text x="24" y="{y + 4}" font-size="12.5" class="m">{label}</text>',
+           f'<line x1="{X0}" y1="{y}" x2="{X1}" y2="{y}" stroke="{t["grid"]}"/>']
+    last = -99
+    for repo, day, num, title, url in prs:
+        x = max(pos(day), last + 7)  # nudge PRs merged the same week so each stays visible
+        last = x
+        dot = f'<circle class="dot" cx="{x:.1f}" cy="{y}" r="5" fill="{t["accent"]}" stroke="{t["bg"]}" stroke-width="2"/>'
+        if links:
+            dot = (f'<a href="{escape(url)}" target="_blank" rel="noopener" data-pr="{escape(repo)} #{num}" '
+                   f'data-title="{escape(title)}" data-date="{day:%d %b %Y}">'
+                   f'<circle class="hit" cx="{x:.1f}" cy="{y}" r="11"/>{dot}</a>')
+        out.append(dot)
+    out.append(f'<text x="804" y="{y + 4}" text-anchor="end" font-size="12.5" font-weight="600" class="m">{len(prs)}</text>'
+               f'<text x="826" y="{y + 4}" text-anchor="end" font-size="12" class="mu">↗</text>')
+    return out
+
+
+def upstream_card(prs, t, links=False, scope=""):
+    """The whole timeline as one card. With links, every dot opens its PR (for the Pages copy)."""
+    lanes, order, months, pos = timeline(prs)
+    top, step = 92, 24
+    h = top + len(order) * step + 4
+    body = head(prs, order, months, pos, t, h - 14)
     for i, org in enumerate(order):
-        y = top + i * step
-        names = sorted({p[0] for p in lanes[org]})
-        label = escape(names[0]) if len(names) == 1 else f'{escape(org)}<tspan class="mu"> {len(names)} repos</tspan>'
-        body.append(f'<text x="24" y="{y + 4}" font-size="12.5" class="m">{label}</text>')
-        body.append(f'<line x1="{x0}" y1="{y}" x2="{x1}" y2="{y}" stroke="{t["grid"]}"/>')
-        last = -99
-        for repo, day, num, title, url in lanes[org]:
-            x = max(pos(day), last + 7)  # nudge PRs merged the same week so each stays visible
-            last = x
-            dot = f'<circle class="dot" cx="{x:.1f}" cy="{y}" r="5" fill="{t["accent"]}" stroke="{t["bg"]}" stroke-width="2"/>'
-            if links:
-                dot = (f'<a href="{escape(url)}" target="_blank" rel="noopener" data-pr="{escape(repo)} #{num}" '
-                       f'data-title="{escape(title)}" data-date="{day:%d %b %Y}">'
-                       f'<circle class="hit" cx="{x:.1f}" cy="{y}" r="11"/>{dot}</a>')
-            body.append(dot)
-        body.append(f'<text x="816" y="{y + 4}" text-anchor="end" font-size="12.5" font-weight="600" class="m">'
-                    f"{len(lanes[org])}</text>")
-    return svg(h, f"{len(prs)} merged pull requests in {repos} upstream repositories", "".join(body), t, scope)
+        body += lane(org, lanes[org], top + i * step, pos, t, links)
+    return svg(h, f"{len(prs)} merged pull requests in upstream repositories", "".join(body), t, scope)
+
+
+def org_link(org, prs):
+    """GitHub's own list of my merged PRs in this org."""
+    repos = {p[0] for p in prs}
+    q = f"is:pr is:merged author:{USER}"
+    if len(repos) == 1:
+        return f"https://github.com/{repos.pop()}/pulls?q={urllib.parse.quote_plus(q)}"
+    return f"https://github.com/search?q={urllib.parse.quote_plus(q + ' org:' + org)}&type=pullrequests"
+
+
+def upstream_rows(prs, out):
+    """The timeline split into a header and one image per org, so each row in the README can be a link.
+
+    Writes the images into out and returns the HTML that stacks them.
+    """
+    lanes, order, months, pos = timeline(prs)
+    for theme, t in THEMES.items():
+        (out / f"head-{theme}.svg").write_text(
+            svg(88, "Merged pull requests in other projects, by month", "".join(head(prs, order, months, pos, t, 88)), t, frame=False))
+        for org in order:
+            grid = "".join(f'<line x1="{pos(m):.1f}" y1="0" x2="{pos(m):.1f}" y2="28" stroke="{t["grid"]}"/>' for m in months)
+            (out / f"{org}-{theme}.svg").write_text(
+                svg(28, f"{org}: {len(lanes[org])} merged PRs", grid + "".join(lane(org, lanes[org], 14, pos, t)), t, frame=False))
+    pic = lambda name, alt: (f'<picture><source media="(prefers-color-scheme: dark)" srcset="assets/upstream/{name}-dark.svg">'
+                             f'<img alt="{escape(alt)}" src="assets/upstream/{name}-light.svg" width="100%"></picture>')
+    rows = [pic("head", "Merged pull requests in other projects, by month")]
+    rows += [f'<a href="{escape(org_link(org, lanes[org]))}">{pic(org, f"{org}: {len(lanes[org])} merged PRs")}</a>'
+             for org in order]
+    return "\n".join(rows)
 
 
 def track(x0, x1, y, no, title, note, t):
@@ -254,7 +298,12 @@ def main():
     (out / "cover.svg").write_text(cover(prs, total, days))
     for theme, t in THEMES.items():
         (out / f"tracklist-{theme}.svg").write_text(tracklist(prs, t))
-        (out / f"upstream-{theme}.svg").write_text(upstream_card(prs, t))
+    rows = out / "upstream"
+    shutil.rmtree(rows, ignore_errors=True)
+    rows.mkdir()
+    readme = ROOT / "README.md"
+    block = f"<!-- timeline:start -->\n{upstream_rows(prs, rows)}\n<!-- timeline:end -->"
+    readme.write_text(re.sub(r"<!-- timeline:start -->.*<!-- timeline:end -->", lambda _: block, readme.read_text(), flags=re.S))
     (ROOT / "docs").mkdir(exist_ok=True)
     (ROOT / "docs" / "index.html").write_text(page(prs))
     print(f"{total} contributions, {len(prs)} merged upstream PRs")

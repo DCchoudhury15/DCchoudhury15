@@ -7,9 +7,13 @@
   <img alt="Tracklist: my projects, and my latest merged upstream pull requests" src="assets/tracklist-light.svg" width="100%">
 </picture>
 
+<a href="https://dcchoudhury15.github.io/DCchoudhury15/">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/upstream-dark.svg">
   <img alt="Merged pull requests in other projects, by month" src="assets/upstream-light.svg" width="100%">
 </picture>
+</a>
+
+<sub>Click the graph for the interactive version: hover a dot to see the PR, click to open it.</sub>
 
 <!-- Cards in assets/ are made by scripts/build.py and refreshed daily by .github/workflows/refresh.yml -->

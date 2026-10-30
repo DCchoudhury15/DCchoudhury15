@@ -52,14 +52,15 @@ def api(path, body=None):
 
 
 def merged_upstream_prs():
-    """(repo full name, merge date, PR number) for every merged PR in repos the user does not own, oldest first."""
+    """(repo full name, merge date, PR number, title, url) for every merged PR in repos the user does not own, oldest first."""
     q = urllib.parse.quote(f"type:pr author:{USER} is:merged -user:{USER}")
     prs, page = [], 1
     while True:
         items = api(f"/search/issues?q={q}&per_page=100&page={page}")["items"]
         for it in items:
             merged = it["pull_request"].get("merged_at") or it["closed_at"]
-            prs.append((it["repository_url"].split("/repos/")[1], dt.date.fromisoformat(merged[:10]), it["number"]))
+            prs.append((it["repository_url"].split("/repos/")[1], dt.date.fromisoformat(merged[:10]), it["number"],
+                        it["title"], it["html_url"]))
         if len(items) < 100:
             return sorted(prs, key=lambda p: p[1])
         page += 1
@@ -84,7 +85,7 @@ def longest_run(days):
 
 def cover(prs, total, days):
     """Album sleeve with the record sliding out. Same dark artwork in both themes."""
-    orgs = len({r.split("/")[0] for r, _, _ in prs})
+    orgs = len({r.split("/")[0] for r, *_ in prs})
     levels = ["#221a3a", "#4a2c5e", "#a23f6d", "#e0703f", "#f6c177"]
     tiles = "".join(  # one square per day, 19 days per column, last 361 days
         f'<rect x="{22 + (i // 19) * 13.6:.1f}" y="{22 + (i % 19) * 13.6:.1f}" width="11.6" height="11.6" rx="2.5" '
@@ -120,20 +121,21 @@ def cover(prs, total, days):
     )
 
 
-def svg(h, label, body, t):
+def svg(h, label, body, t, scope=""):
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{h}" viewBox="0 0 {W} {h}" '
         f'role="img" aria-label="{escape(label)}">'
-        f'<style>text{{font-family:{SANS};fill:{t["fg"]}}}.m{{font-family:{MONO}}}.mu{{fill:{t["muted"]}}}</style>'
+        f'<style>{scope}text{{font-family:{SANS};fill:{t["fg"]}}}{scope}.m{{font-family:{MONO}}}{scope}.mu{{fill:{t["muted"]}}}</style>'
         f'<rect x=".5" y=".5" width="{W - 1}" height="{h - 1}" rx="10" fill="none" stroke="{t["line"]}"/>'
         f"{body}</svg>\n"
     )
 
 
-def upstream_card(prs, t):
+def upstream_card(prs, t, links=False, scope=""):
+    """Merged PRs by month, one lane per org. With links, every dot opens its PR (for the Pages copy)."""
     lanes = defaultdict(list)
-    for repo, day in prs:
-        lanes[repo.split("/")[0]].append((repo, day))
+    for pr in prs:
+        lanes[pr[0].split("/")[0]].append(pr)
     order = sorted(lanes, key=lambda o: (-len(lanes[o]), lanes[o][0][1]))
 
     first = prs[0][1]
@@ -145,7 +147,7 @@ def upstream_card(prs, t):
 
     top, step = 92, 24
     h = top + len(order) * step + 4
-    repos = len({r for r, _ in prs})
+    repos = len({p[0] for p in prs})
     body = [
         '<text x="24" y="38" font-size="16" font-weight="600">Merged pull requests in other projects</text>',
         f'<text x="816" y="38" text-anchor="end" font-size="12" class="m mu">'
@@ -162,18 +164,23 @@ def upstream_card(prs, t):
 
     for i, org in enumerate(order):
         y = top + i * step
-        names = sorted({r for r, _ in lanes[org]})
+        names = sorted({p[0] for p in lanes[org]})
         label = escape(names[0]) if len(names) == 1 else f'{escape(org)}<tspan class="mu"> {len(names)} repos</tspan>'
         body.append(f'<text x="24" y="{y + 4}" font-size="12.5" class="m">{label}</text>')
         body.append(f'<line x1="{x0}" y1="{y}" x2="{x1}" y2="{y}" stroke="{t["grid"]}"/>')
         last = -99
-        for _, day in lanes[org]:
+        for repo, day, num, title, url in lanes[org]:
             x = max(pos(day), last + 7)  # nudge PRs merged the same week so each stays visible
             last = x
-            body.append(f'<circle cx="{x:.1f}" cy="{y}" r="5" fill="{t["accent"]}" stroke="{t["bg"]}" stroke-width="2"/>')
+            dot = f'<circle class="dot" cx="{x:.1f}" cy="{y}" r="5" fill="{t["accent"]}" stroke="{t["bg"]}" stroke-width="2"/>'
+            if links:
+                dot = (f'<a href="{escape(url)}" target="_blank" rel="noopener" data-pr="{escape(repo)} #{num}" '
+                       f'data-title="{escape(title)}" data-date="{day:%d %b %Y}">'
+                       f'<circle class="hit" cx="{x:.1f}" cy="{y}" r="11"/>{dot}</a>')
+            body.append(dot)
         body.append(f'<text x="816" y="{y + 4}" text-anchor="end" font-size="12.5" font-weight="600" class="m">'
                     f"{len(lanes[org])}</text>")
-    return svg(h, f"{len(prs)} merged pull requests in {repos} upstream repositories", "".join(body), t)
+    return svg(h, f"{len(prs)} merged pull requests in {repos} upstream repositories", "".join(body), t, scope)
 
 
 def track(x0, x1, y, no, title, note, t):
@@ -197,11 +204,46 @@ def tracklist(prs, t):
     ]
     for i, (title, genre) in enumerate(SIDE_A):
         body.append(track(28, 396, top + i * step, f"A{i + 1}", title, genre, t))
-    for i, (repo, day, num) in enumerate(prs[::-1][:len(SIDE_A)]):
+    for i, (repo, day, num, *_) in enumerate(prs[::-1][:len(SIDE_A)]):
         name = repo.split("/")[1].replace("opentelemetry", "otel")
         name = name if len(name) <= 26 else name[:25] + "…"
         body.append(track(448, 812, top + i * step, f"B{i + 1}", f"{name} #{num}", f"{day:%b %Y}", t))
     return svg(h, "Tracklist: my projects, and my latest merged upstream pull requests", "".join(body), t)
+
+
+def page(prs):
+    """Interactive copy of the timeline for GitHub Pages: hover a dot to see the PR, click to open it."""
+    cards = "".join(f'<div class="{theme}">{upstream_card(prs, t, links=True, scope=f".{theme} ")}</div>'
+                    for theme, t in THEMES.items())
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Merged upstream PRs</title>
+<style>
+body{{margin:0;padding:32px 16px;background:#fff;font-family:{SANS}}}
+main{{max-width:840px;margin:auto}} svg{{width:100%;height:auto;display:block}} .dark{{display:none}}
+.hit{{fill:transparent}} a:hover .dot{{r:8}} p{{color:#59636e;font-size:14px}} p a{{color:inherit}}
+#tip{{position:fixed;display:none;pointer-events:none;max-width:320px;padding:8px 10px;border-radius:6px;
+font-size:13px;line-height:1.4;background:#1f2328;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.25)}}
+#tip b{{display:block;font:12px {MONO};opacity:.75}}
+@media (prefers-color-scheme:dark){{body{{background:#0d1117}} .light{{display:none}} .dark{{display:block}}
+p{{color:#9198a1}} #tip{{background:#e6edf3;color:#0d1117}}}}
+</style></head><body><main>{cards}
+<p>Hover a dot to see the pull request, click to open it. Updated daily.
+<a href="https://github.com/{USER}">Back to profile</a></p></main><div id="tip"></div>
+<script>
+const tip = document.getElementById("tip");
+for (const a of document.querySelectorAll("a[data-pr]")) {{
+  a.addEventListener("mousemove", e => {{
+    const head = document.createElement("b");
+    head.textContent = a.dataset.pr + " · " + a.dataset.date;
+    tip.replaceChildren(head, a.dataset.title);
+    tip.style.display = "block";
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px";
+    tip.style.top = e.clientY + 14 + "px";
+  }});
+  a.addEventListener("mouseleave", () => tip.style.display = "none");
+}}
+</script></body></html>
+"""
 
 
 def main():
@@ -212,7 +254,9 @@ def main():
     (out / "cover.svg").write_text(cover(prs, total, days))
     for theme, t in THEMES.items():
         (out / f"tracklist-{theme}.svg").write_text(tracklist(prs, t))
-        (out / f"upstream-{theme}.svg").write_text(upstream_card([(r, d) for r, d, _ in prs], t))
+        (out / f"upstream-{theme}.svg").write_text(upstream_card(prs, t))
+    (ROOT / "docs").mkdir(exist_ok=True)
+    (ROOT / "docs" / "index.html").write_text(page(prs))
     print(f"{total} contributions, {len(prs)} merged upstream PRs")
 
 

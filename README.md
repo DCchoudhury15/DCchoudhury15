@@ -1,8 +1,6 @@
-<img alt="Divyanshu Choudhury, Open Source, Vol. 1: an album cover with a record sliding out" src="assets/cover.svg" width="100%">
+<img alt="Divyanshu Choudhury, open-source systems engineer, with a year of contributions and a spinning disc" src="assets/cover.svg" width="100%">
 
-**Liner notes.** I work on observability, databases and build tooling. In GSoC 2026 at INCF / EBRAINS I built Spack subset environments for the EBRAINS Software Distribution and got arbor, NEST and NEURON running on EESSI ([merge request](https://gitlab.ebrains.eu/ri/tech-hub/platform/esd/ebrains-spack-builds/-/merge_requests/802)). Lately I built [Taintward](https://github.com/DCchoudhury15/Taintward) and [IsoWatch](https://github.com/DCchoudhury15/isowatch). Final-year B.Tech CSE, graduating July 2027.
-
-
+I work on observability, databases and build tooling. In GSoC 2026 at INCF / EBRAINS I built Spack subset environments for the EBRAINS Software Distribution and got arbor, NEST and NEURON running on EESSI ([merge request](https://gitlab.ebrains.eu/ri/tech-hub/platform/esd/ebrains-spack-builds/-/merge_requests/802)). Lately I built [Taintward](https://github.com/DCchoudhury15/Taintward) and [IsoWatch](https://github.com/DCchoudhury15/isowatch). Final-year B.Tech CSE, graduating July 2027.
 
 <!-- timeline:start -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="assets/upstream/head-dark.svg"><img alt="Merged pull requests in other projects, by month" src="assets/upstream/head-light.svg" width="100%"></picture>

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Render the profile README as a record sleeve, from live GitHub data.
+"""Render the profile README cards from live GitHub data.
 
-Writes assets/cover.svg plus a light and a dark tracklist. Needs GITHUB_TOKEN.
+Writes assets/cover.svg, the PR timeline rows and the Pages copy. Needs GITHUB_TOKEN.
 Runs once a day from .github/workflows/refresh.yml.
 """
 
 import datetime as dt
 import json
+import math
 import os
 import pathlib
 import re
@@ -24,19 +25,11 @@ MONO = "ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',m
 SERIF = "Georgia,'Times New Roman',serif"
 
 THEMES = {
-    "light": {"bg": "#ffffff", "fg": "#1f2328", "muted": "#59636e", "line": "#d0d7de", "grid": "#eaeef2", "accent": "#b5652a"},
-    "dark": {"bg": "#0d1117", "fg": "#e6edf3", "muted": "#9198a1", "line": "#30363d", "grid": "#21262d", "accent": "#f0a35e"},
+    "light": {"bg": "#ffffff", "fg": "#1f2328", "muted": "#59636e", "line": "#d0d7de", "grid": "#eaeef2", "accent": "#b5652a",
+              "palette": ["#b5652a", "#c2416e", "#0f8a7a", "#7c5cd6", "#1f6feb", "#9a6700"]},
+    "dark": {"bg": "#0d1117", "fg": "#e6edf3", "muted": "#9198a1", "line": "#30363d", "grid": "#21262d", "accent": "#f0a35e",
+             "palette": ["#f0a35e", "#e7709a", "#56d4bc", "#b392f0", "#6cb6ff", "#e3b341"]},
 }
-
-SIDE_A = [  # (track, genre)
-    ("GSoC 2026 · INCF / EBRAINS", "Spack, HPC"),
-    ("Taintward", "Python"),
-    ("IsoWatch", "Go"),
-    ("Chat-AI", "TypeScript"),
-    ("AudioVisualizer", "PyTorch"),
-    ("Portfolio", "WebGL"),
-]
-CREDITS = "Go · C++ · Python · TypeScript · PostgreSQL · Docker · Kubernetes · OpenTelemetry · Jaeger · Next.js"
 
 
 def api(path, body=None):
@@ -86,7 +79,7 @@ def longest_run(days):
 
 
 def cover(prs, total, days):
-    """Album sleeve with the record sliding out. Same dark artwork in both themes."""
+    """Contribution calendar on a sleeve, with a spinning disc. Same dark artwork in both themes."""
     orgs = len({r.split("/")[0] for r, *_ in prs})
     levels = ["#221a3a", "#4a2c5e", "#a23f6d", "#e0703f", "#f6c177"]
     tiles = "".join(  # one square per day, 19 days per column, last 361 days
@@ -94,31 +87,34 @@ def cover(prs, total, days):
         f'fill="{levels[0 if not n else 1 if n < 3 else 2 if n < 6 else 3 if n < 10 else 4]}"/>'
         for i, n in enumerate(days[-361:]))
     grooves = "".join(f'<circle cx="318" cy="150" r="{r}" fill="none" stroke="#1f1f1f"/>' for r in range(48, 124, 5))
-    stats = [(len(prs), "tracks"), (orgs, "labels"), (f"{total:,}", "plays"), (longest_run(days), "day streak")]
+    marks = "".join(  # uneven groove highlights, so the spin is visible
+        f'<path d="M{318 + r} 150A{r} {r} 0 0 1 {318 + r * math.cos(a):.1f} {150 + r * math.sin(a):.1f}" '
+        f'fill="none" stroke="#3a3a3a" stroke-width="1.5"/>' for r, a in ((58, 1.1), (76, 2.0), (94, 0.8), (112, 1.6)))
+    stats = [(len(prs), "merged PRs"), (orgs, "orgs"), (f"{total:,}", "contributions"), (longest_run(days), "day streak")]
     cells = "".join(
         f'<text x="{472 + i * 90}" y="226" font-family="{SANS}" font-size="24" font-weight="700" fill="#f5efe6">{v}</text>'
         f'<text x="{472 + i * 90}" y="246" font-family="{MONO}" font-size="9.5" letter-spacing=".5" fill="#8a8178">'
         f"{label.upper()}</text>" for i, (v, label) in enumerate(stats))
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="300" viewBox="0 0 {W} 300" role="img" '
-        f'aria-label="Divyanshu Choudhury, Open Source, Vol. 1. {len(prs)} merged upstream PRs in {orgs} orgs.">'
-        '<defs>'
-        '<clipPath id="sleeve"><rect x="20" y="20" width="260" height="260" rx="4"/></clipPath></defs>'
+        f'aria-label="Divyanshu Choudhury, open-source systems engineer. {len(prs)} merged upstream PRs in {orgs} orgs.">'
+        '<defs><clipPath id="sleeve"><rect x="20" y="20" width="260" height="260" rx="4"/></clipPath></defs>'
         f'<rect width="{W}" height="300" rx="12" fill="#14110f"/>'
-        f'<circle cx="318" cy="150" r="125" fill="#0b0b0b"/>{grooves}'
-        '<path d="M318 40A110 110 0 0 1 420 115" fill="none" stroke="#fff" stroke-opacity=".07" stroke-width="18"/>'
-        '<circle cx="318" cy="150" r="42" fill="#f0a35e"/>'
+        f'<circle cx="318" cy="150" r="125" fill="#0b0b0b"/>'
+        f'<g>{grooves}{marks}<circle cx="318" cy="150" r="42" fill="#f0a35e"/>'
         f'<text x="318" y="140" text-anchor="middle" font-family="{MONO}" font-size="11" font-weight="700" fill="#14110f">DC15</text>'
-        f'<text x="318" y="170" text-anchor="middle" font-family="{MONO}" font-size="7" fill="#14110f">33 RPM</text>'
+        '<circle cx="318" cy="170" r="2.5" fill="#14110f"/>'
+        '<animateTransform attributeName="transform" type="rotate" from="0 318 150" to="360 318 150" dur="8s" repeatCount="indefinite"/></g>'
+        '<path d="M318 40A110 110 0 0 1 420 115" fill="none" stroke="#fff" stroke-opacity=".07" stroke-width="18"/>'
         '<circle cx="318" cy="150" r="4" fill="#14110f"/>'
         '<rect x="20" y="20" width="260" height="260" rx="4" fill="#1b1530"/>'
         f'<g clip-path="url(#sleeve)">{tiles}<rect x="20" y="246" width="260" height="34" fill="#0d0a14" opacity=".8"/></g>'
-        f'<text x="36" y="264" font-family="{MONO}" font-size="10" letter-spacing="1.5" fill="#fff" opacity=".8">OPEN SOURCE · VOL. 1</text>'
-        f'<text x="472" y="76" font-family="{MONO}" font-size="11" letter-spacing="2" fill="#f0a35e">NOW PLAYING</text>'
+        f'<text x="36" y="267" font-family="{MONO}" font-size="10" letter-spacing="1.5" fill="#fff" opacity=".8">361 DAYS OF CONTRIBUTIONS</text>'
+        f'<text x="472" y="76" font-family="{MONO}" font-size="11" letter-spacing="2" fill="#f0a35e">OPEN-SOURCE SYSTEMS ENGINEER</text>'
         f'<text x="472" y="114" font-family="{SANS}" font-size="30" font-weight="700" fill="#f5efe6">Divyanshu Choudhury</text>'
-        f'<text x="472" y="144" font-family="{SERIF}" font-size="19" font-style="italic" fill="#e0b885">Open Source, Vol. 1</text>'
-        f'<text x="472" y="172" font-family="{MONO}" font-size="10.5" fill="#8a8178">JABALPUR RECORDS · SYSTEMS AND OBSERVABILITY</text>'
-        f'<text x="472" y="192" font-family="{MONO}" font-size="9.5" fill="#6f665e">COVER ART: ONE SQUARE PER DAY OF CONTRIBUTIONS</text>'
+        f'<text x="472" y="144" font-family="{SERIF}" font-size="19" font-style="italic" fill="#e0b885">Observability, databases and build tooling</text>'
+        f'<text x="472" y="172" font-family="{MONO}" font-size="10.5" fill="#8a8178">JABALPUR, INDIA · GSOC 2026 AT INCF / EBRAINS</text>'
+        f'<text x="472" y="192" font-family="{MONO}" font-size="9.5" fill="#6f665e">LEFT: ONE SQUARE PER DAY OF CONTRIBUTIONS</text>'
         f"{cells}</svg>\n"
     )
 
@@ -133,7 +129,7 @@ def svg(h, label, body, t, scope="", frame=True):
     )
 
 
-X0, X1 = 240, 776
+X0, X1 = 240, 760
 
 
 def timeline(prs):
@@ -166,34 +162,39 @@ def head(prs, order, months, pos, t, grid_to):
     return out
 
 
-def lane(org, prs, y, pos, t, links=False):
+def lane(org, prs, y, pos, t, color, links=False):
+    """One org: a soft band from its first to its last merged PR, a dot per PR, and a count badge."""
     names = sorted({p[0] for p in prs})
     label = escape(names[0]) if len(names) == 1 else f'{escape(org)}<tspan class="mu"> {len(names)} repos</tspan>'
+    xs, last = [], -99
+    for p in prs:
+        last = max(pos(p[1]), last + 7)  # nudge PRs merged the same week so each stays visible
+        xs.append(last)
     out = [f'<text x="24" y="{y + 4}" font-size="12.5" class="m">{label}</text>',
-           f'<line x1="{X0}" y1="{y}" x2="{X1}" y2="{y}" stroke="{t["grid"]}"/>']
-    last = -99
-    for repo, day, num, title, url in prs:
-        x = max(pos(day), last + 7)  # nudge PRs merged the same week so each stays visible
-        last = x
-        dot = f'<circle class="dot" cx="{x:.1f}" cy="{y}" r="5" fill="{t["accent"]}" stroke="{t["bg"]}" stroke-width="2"/>'
+           f'<line x1="{X0}" y1="{y}" x2="{X1}" y2="{y}" stroke="{t["grid"]}"/>',
+           f'<rect x="{xs[0] - 9:.1f}" y="{y - 9}" width="{xs[-1] - xs[0] + 18:.1f}" height="18" rx="9" fill="{color}" opacity=".16"/>']
+    for x, (repo, day, num, title, url) in zip(xs, prs):
+        dot = f'<circle class="dot" cx="{x:.1f}" cy="{y}" r="5" fill="{color}" stroke="{t["bg"]}" stroke-width="1.5"/>'
         if links:
             dot = (f'<a href="{escape(url)}" target="_blank" rel="noopener" data-pr="{escape(repo)} #{num}" '
                    f'data-title="{escape(title)}" data-date="{day:%d %b %Y}">'
                    f'<circle class="hit" cx="{x:.1f}" cy="{y}" r="11"/>{dot}</a>')
         out.append(dot)
-    out.append(f'<text x="804" y="{y + 4}" text-anchor="end" font-size="12.5" font-weight="600" class="m">{len(prs)}</text>'
-               f'<text x="826" y="{y + 4}" text-anchor="end" font-size="12" class="mu">↗</text>')
+    out.append(f'<rect x="778" y="{y - 9}" width="30" height="18" rx="9" fill="{color}" opacity=".16"/>'
+               f'<text x="793" y="{y + 4}" text-anchor="middle" font-size="12" font-weight="700" class="m" '
+               f'style="fill:{color}">{len(prs)}</text>'
+               f'<text x="830" y="{y + 4}" text-anchor="end" font-size="12" class="mu">↗</text>')
     return out
 
 
 def upstream_card(prs, t, links=False, scope=""):
     """The whole timeline as one card. With links, every dot opens its PR (for the Pages copy)."""
     lanes, order, months, pos = timeline(prs)
-    top, step = 92, 24
-    h = top + len(order) * step + 4
+    top, step = 100, 30
+    h = top + len(order) * step
     body = head(prs, order, months, pos, t, h - 14)
     for i, org in enumerate(order):
-        body += lane(org, lanes[org], top + i * step, pos, t, links)
+        body += lane(org, lanes[org], top + i * step, pos, t, t["palette"][i % len(t["palette"])], links)
     return svg(h, f"{len(prs)} merged pull requests in upstream repositories", "".join(body), t, scope)
 
 
@@ -215,44 +216,16 @@ def upstream_rows(prs, out):
     for theme, t in THEMES.items():
         (out / f"head-{theme}.svg").write_text(
             svg(88, "Merged pull requests in other projects, by month", "".join(head(prs, order, months, pos, t, 88)), t, frame=False))
-        for org in order:
-            grid = "".join(f'<line x1="{pos(m):.1f}" y1="0" x2="{pos(m):.1f}" y2="28" stroke="{t["grid"]}"/>' for m in months)
+        for i, org in enumerate(order):
+            color = t["palette"][i % len(t["palette"])]
             (out / f"{org}-{theme}.svg").write_text(
-                svg(28, f"{org}: {len(lanes[org])} merged PRs", grid + "".join(lane(org, lanes[org], 14, pos, t)), t, frame=False))
+                svg(30, f"{org}: {len(lanes[org])} merged PRs", "".join(lane(org, lanes[org], 15, pos, t, color)), t, frame=False))
     pic = lambda name, alt: (f'<picture><source media="(prefers-color-scheme: dark)" srcset="assets/upstream/{name}-dark.svg">'
                              f'<img alt="{escape(alt)}" src="assets/upstream/{name}-light.svg" width="100%"></picture>')
     rows = [pic("head", "Merged pull requests in other projects, by month")]
     rows += [f'<a href="{escape(org_link(org, lanes[org]))}">{pic(org, f"{org}: {len(lanes[org])} merged PRs")}</a>'
              for org in order]
     return "\n".join(rows)
-
-
-def track(x0, x1, y, no, title, note, t):
-    return (f'<text x="{x0}" y="{y}" font-size="11" class="m mu">{no}</text>'
-            f'<text x="{x0 + 30}" y="{y}" font-size="13.5">{escape(title)}</text>'
-            f'<text x="{x1}" y="{y}" text-anchor="end" font-size="11" class="m mu">{escape(note)}</text>'
-            f'<line x1="{x0}" y1="{y + 11}" x2="{x1}" y2="{y + 11}" stroke="{t["grid"]}"/>')
-
-
-def tracklist(prs, t):
-    top, step = 80, 32
-    h = top + len(SIDE_A) * step + 40
-    accent = f'class="m" font-size="11" letter-spacing="1.5" style="fill:{t["accent"]}"'
-    body = [
-        f'<text x="28" y="44" {accent}>SIDE A · ORIGINALS</text>',
-        f'<text x="448" y="44" {accent}>SIDE B · UPSTREAM SESSIONS ({len(prs)})</text>',
-        f'<line x1="420" y1="28" x2="420" y2="{h - 52}" stroke="{t["line"]}"/>',
-        f'<line x1="0" y1="{h - 44}" x2="{W}" y2="{h - 44}" stroke="{t["line"]}"/>',
-        f'<text x="28" y="{h - 17}" {accent}>CREDITS</text>',
-        f'<text x="110" y="{h - 17}" font-size="12.5" class="mu">{escape(CREDITS)}</text>',
-    ]
-    for i, (title, genre) in enumerate(SIDE_A):
-        body.append(track(28, 396, top + i * step, f"A{i + 1}", title, genre, t))
-    for i, (repo, day, num, *_) in enumerate(prs[::-1][:len(SIDE_A)]):
-        name = repo.split("/")[1].replace("opentelemetry", "otel")
-        name = name if len(name) <= 26 else name[:25] + "…"
-        body.append(track(448, 812, top + i * step, f"B{i + 1}", f"{name} #{num}", f"{day:%b %Y}", t))
-    return svg(h, "Tracklist: my projects, and my latest merged upstream pull requests", "".join(body), t)
 
 
 def page(prs):
@@ -296,8 +269,6 @@ def main():
     out = ROOT / "assets"
     out.mkdir(exist_ok=True)
     (out / "cover.svg").write_text(cover(prs, total, days))
-    for theme, t in THEMES.items():
-        (out / f"tracklist-{theme}.svg").write_text(tracklist(prs, t))
     rows = out / "upstream"
     shutil.rmtree(rows, ignore_errors=True)
     rows.mkdir()

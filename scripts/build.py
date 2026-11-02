@@ -78,7 +78,23 @@ def longest_run(days):
     return best
 
 
-def cover(prs, total, days):
+def all_time_days():
+    """Contribution count for every day since the account's first contribution, oldest first."""
+    query = "query($u:String!){user(login:$u){contributionsCollection{contributionYears}}}"
+    years = api("/graphql", {"query": query, "variables": {"u": USER}})
+    years = years["data"]["user"]["contributionsCollection"]["contributionYears"]
+    query = ("query($u:String!,$from:DateTime!,$to:DateTime!){user(login:$u){contributionsCollection(from:$from,to:$to){"
+             "contributionCalendar{weeks{contributionDays{contributionCount}}}}}}")
+    days = []
+    for year in range(min(years), max(years) + 1):  # every year, as the list skips years with no contributions
+        span = {"u": USER, "from": f"{year}-01-01T00:00:00Z", "to": f"{year}-12-31T23:59:59Z"}
+        cal = api("/graphql", {"query": query, "variables": span})
+        cal = cal["data"]["user"]["contributionsCollection"]["contributionCalendar"]
+        days += [d["contributionCount"] for w in cal["weeks"] for d in w["contributionDays"]]
+    return days
+
+
+def cover(prs, total, days, streak):
     """Contribution calendar on a sleeve, with a spinning disc. Same dark artwork in both themes."""
     orgs = len({r.split("/")[0] for r, *_ in prs})
     levels = ["#221a3a", "#4a2c5e", "#a23f6d", "#e0703f", "#f6c177"]
@@ -90,7 +106,7 @@ def cover(prs, total, days):
     marks = "".join(  # uneven groove highlights, so the spin is visible
         f'<path d="M{318 + r} 150A{r} {r} 0 0 1 {318 + r * math.cos(a):.1f} {150 + r * math.sin(a):.1f}" '
         f'fill="none" stroke="#3a3a3a" stroke-width="1.5"/>' for r, a in ((58, 1.1), (76, 2.0), (94, 0.8), (112, 1.6)))
-    stats = [(len(prs), "merged PRs"), (orgs, "orgs"), (f"{total:,}", "contributions"), (longest_run(days), "day streak")]
+    stats = [(len(prs), "merged PRs"), (orgs, "orgs"), (f"{total:,}", "contributions"), (streak, "day streak")]
     cells = "".join(
         f'<text x="{472 + i * 90}" y="226" font-family="{SANS}" font-size="24" font-weight="700" fill="#f5efe6">{v}</text>'
         f'<text x="{472 + i * 90}" y="246" font-family="{MONO}" font-size="9.5" letter-spacing=".5" fill="#8a8178">'
@@ -268,7 +284,7 @@ def main():
     total, days = calendar()
     out = ROOT / "assets"
     out.mkdir(exist_ok=True)
-    (out / "cover.svg").write_text(cover(prs, total, days))
+    (out / "cover.svg").write_text(cover(prs, total, days, longest_run(all_time_days())))
     rows = out / "upstream"
     shutil.rmtree(rows, ignore_errors=True)
     rows.mkdir()

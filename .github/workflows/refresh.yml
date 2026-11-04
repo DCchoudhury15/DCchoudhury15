@@ -2,7 +2,9 @@ name: Refresh profile cards
 
 on:
   schedule:
-    - cron: "17 2 * * *"
+    # Every hour, so a newly merged PR shows up within the hour (GitHub can start
+    # scheduled runs late). Cards are only committed when something changed.
+    - cron: "17 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
